@@ -1,0 +1,37 @@
+Nummer,Nummer alt,Genotyp,Kondition,Tiernummer,Section,Area,region,name,Experiment,broken,Ausschluss von Analyse,isLabelled
+92,92,WT,-,128 F10-2,3a,CA1,dHC,Dennis,1,NA,NA,0
+89,89,WT,-,128 F10-2,2a,CA1,dHC,Dennis,1,NA,NA,1
+77,77,WT,-,77,2b,CA1,dHC,Dennis,1,NA,NA,1
+74,74,WT,-,77,2a,CA1,dHC,Dennis,1,NA,NA,0
+72,72,WT,-,77,1b,CA3,dHC,Dennis,1,NA,NA,1
+96,96,WT,-,128 F10-2,3b,CA3,dHC,Dennis,1,NA,NA,0
+93,93,WT,-,128 F10-2,3a,CA3,dHC,Dennis,1,NA,NA,0
+78,78,WT,-,77,2b,CA3,dHC,Dennis,1,NA,NA,0
+82,82,WT,-,77,3a,DG,dHC,Dennis,1,NA,NA,1
+91,91,WT,-,128 F10-2,2a,DG,dHC,Dennis,1,NA,NA,1
+76,76,WT,-,77,2a,DG,dHC,Dennis,1,NA,NA,1
+94,94,WT,-,128 F10-2,3a,DG,dHC,Dennis,1,NA,NA,0
+15,15,WT,+,1,3b,CA1,dHC,Dennis,1,NA,NA,1
+6,6,WT,+,1,2a,CA1,dHC,Dennis,1,NA,NA,1
+101,101,WT,+,128 F10-3,2b,CA1,dHC,Dennis,1,NA,NA,0
+98,98,WT,+,128 F10-3,2a,CA1,dHC,Dennis,1,NA,NA,0
+7,7,WT,+,1,2a,CA3,dHC,Dennis,1,NA,NA,1
+1,1,WT,+,1,1a,CA3,dHC,Dennis,1,NA,NA,1
+4,4,WT,+,1,1b,CA3,dHC,Dennis,1,NA,NA,1
+99,99,WT,+,128 F10-3,2a,CA3,dHC,Dennis,1,NA,NA,0
+8,8,WT,+,1,2a,DG,dHC,Dennis,1,NA,NA,1
+11,11,WT,+,1,2b,DG,dHC,Dennis,1,NA,NA,1
+100,100,WT,+,128 F10-3,2a,DG,dHC,Dennis,1,NA,NA,0
+106,106,WT,+,128 F10-3,3a,DG,dHC,Dennis,1,NA,NA,0
+64,64,WT,H,75,3a,CA1,dHC,Dennis,1,NA,NA,1
+67,67,WT,H,75,3b,CA1,dHC,Dennis,1,NA,NA,0
+144,144,WT,H,152I F5-28,1b,CA1,dHC,Dennis,1,NA,NA,0
+150,150,WT,H,152I F5-28,2b,CA1,dHC,Dennis,1,NA,NA,0
+68,68,WT,H,75,3b,CA3,dHC,Dennis,1,NA,NA,1
+62,62,WT,H,75,2b,CA3,dHC,Dennis,1,NA,NA,0
+148,148,WT,H,152I F5-28,2a,CA3,dHC,Dennis,1,NA,NA,0
+145,145,WT,H,152I F5-28,1b,CA3,dHC,Dennis,1,NA,NA,0
+69,69,WT,H,75,3b,DG,dHC,Dennis,1,NA,NA,0
+152,152,WT,H,152I F5-28,2b,DG,dHC,Dennis,1,NA,NA,0
+63,63,WT,H,75,2b,DG,dHC,Dennis,1,NA,NA,0
+149,149,WT,H,152I F5-28,2a,DG,dHC,Dennis,1,NA,NA,0
