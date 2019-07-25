@@ -31,7 +31,7 @@ class Unet2D:
         self.metrics = [metrics.recall,
                         metrics.precision,
                         metrics.f1,
-                        metrics.competitionMetric2,
+                        metrics.iou,
                         metrics.mcor]
 
         self.trainModel, self.padding = self._createModel(True)
@@ -133,17 +133,17 @@ class Unet2D:
 
 
     def train(self, sample_generator, validation_generator=None,
-              n_epochs=100, snapshot_interval=1, snapshot_prefix=None,
-             cyclic_lr= None):
+              n_epochs=100, snapshot_interval=1,
+              snapshot_dir= 'checkpoints', snapshot_prefix=None,
+              log_dir = 'logs', cyclic_lr= None):
 
         callbacks = [TensorBoard(
-            log_dir="logs/{}-{}".format(self.name, time()))]
+            log_dir= log_dir + "/{}-{}".format(self.name, time()))]
         if snapshot_prefix is not None:
-            c_dir = 'checkpoints'
-            if not os.path.isdir(c_dir):
-                os.makedirs(c_dir)
+            if not os.path.isdir(snapshot_dir):
+                os.makedirs(snapshot_dir)
             c_path = os.path.join(
-                c_dir, (snapshot_prefix if snapshot_prefix is not None else self.name))
+                snapshot_dir, (snapshot_prefix if snapshot_prefix is not None else self.name))
             callbacks.append(ModelCheckpoint(
                 c_path + ".{epoch:04d}.h5", mode='auto', period=snapshot_interval))
         if cyclic_lr is not None:
