@@ -1,0 +1,174 @@
+from keras import backend as K
+import numpy as np
+import tensorflow as tf
+
+from keras import backend as K
+
+# from https://github.com/keras-team/keras-contrib/blob/master/keras_contrib/losses/jaccard.py
+def jaccard_distance(y_true, y_pred, smooth=100):
+    """Jaccard distance for semantic segmentation.
+    Also known as the intersection-over-union loss.
+    This loss is useful when you have unbalanced numbers of pixels within an image
+    because it gives all classes equal weight. However, it is not the defacto
+    standard for image segmentation.
+    For example, assume you are trying to predict if
+    each pixel is cat, dog, or background.
+    You have 80% background pixels, 10% dog, and 10% cat.
+    If the model predicts 100% background
+    should it be be 80% right (as with categorical cross entropy)
+    or 30% (with this loss)?
+    The loss has been modified to have a smooth gradient as it converges on zero.
+    This has been shifted so it converges on 0 and is smoothed to avoid exploding
+    or disappearing gradient.
+    Jaccard = (|X & Y|)/ (|X|+ |Y| - |X & Y|)
+            = sum(|A*B|)/(sum(|A|)+sum(|B|)-sum(|A*B|))
+    # Arguments
+        y_true: The ground truth tensor.
+        y_pred: The predicted tensor
+        smooth: Smoothing factor. Default is 100.
+    # Returns
+        The Jaccard distance between the two tensors.
+    # References
+        - [What is a good evaluation measure for semantic segmentation?](
+           http://www.bmva.org/bmvc/2013/Papers/paper0032/paper0032.pdf)
+    """
+    intersection = K.sum(K.abs(y_true * y_pred), axis=-1)
+    sum_ = K.sum(K.abs(y_true) + K.abs(y_pred), axis=-1)
+    jac = (intersection + smooth) / (sum_ - intersection + smooth)
+    return (1 - jac) * smooth
+
+def jaccard(y_true, y_pred):
+    intersection = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    sum_ = K.sum(K.abs(y_true) + K.abs(y_pred), axis=-1)
+    return intersection / (sum_ - intersection)
+
+def mcor(y_true, y_pred):
+    # matthews_correlation
+    y_pred_pos = K.round(K.clip(y_pred, 0, 1))
+    y_pred_neg = 1 - y_pred_pos
+
+    y_pos = K.round(K.clip(y_true, 0, 1))
+    y_neg = 1 - y_pos
+
+    tp = K.sum(y_pos * y_pred_pos)
+    tn = K.sum(y_neg * y_pred_neg)
+
+    fp = K.sum(y_neg * y_pred_pos)
+    fn = K.sum(y_pos * y_pred_neg)
+
+    numerator = (tp * tn - fp * fn)
+    denominator = K.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+
+    return numerator / (denominator + K.epsilon())
+
+
+def precision(y_true, y_pred):
+    """Precision metric.
+
+    Only computes a batch-wise average of precision.
+
+    Computes the precision, a metric for multi-label classification of
+    how many selected items are relevant.
+    """
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+    precision = true_positives / (predicted_positives + K.epsilon())
+    return precision
+
+
+def recall(y_true, y_pred):
+    """Recall metric.
+
+    Only computes a batch-wise average of recall.
+
+    Computes the recall, a metric for multi-label classification of
+    how many relevant items are selected.
+    """
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+    recall = true_positives / (possible_positives + K.epsilon())
+    return recall
+
+
+def f1(y_true, y_pred):
+    def recall(y_true, y_pred):
+        """Recall metric.
+
+        Only computes a batch-wise average of recall.
+
+        Computes the recall, a metric for multi-label classification of
+        how many relevant items are selected.
+        """
+        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+        possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+        recall = true_positives / (possible_positives + K.epsilon())
+        return recall
+
+    def precision(y_true, y_pred):
+        """Precision metric.
+
+        Only computes a batch-wise average of precision.
+
+        Computes the precision, a metric for multi-label classification of
+        how many selected items are relevant.
+        """
+        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+        predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+        precision = true_positives / (predicted_positives + K.epsilon())
+        return precision
+
+    precision = precision(y_true, y_pred)
+    recall = recall(y_true, y_pred)
+    return 2 * ((precision * recall) / (precision + recall))
+
+# Define IoU metric
+def castF(x):
+    return K.cast(x, K.floatx())
+
+def castB(x):
+    return K.cast(x, bool)
+
+def iou_loss_core(true,pred):  #this can be used as a loss if you make it negative
+    intersection = true * pred
+    notTrue = 1 - true
+    union = true + (notTrue * pred)
+
+    return (K.sum(intersection, axis=-1) + K.epsilon()) / (K.sum(union, axis=-1) + K.epsilon())
+
+def competitionMetric2(true, pred): #any shape can go - can't be a loss function
+
+    tresholds = [0.5 + (i*.05)  for i in range(10)]
+
+    #flattened images (batch, pixels)
+    true = K.batch_flatten(true)
+    pred = K.batch_flatten(pred)
+    pred = castF(K.greater(pred, 0.5))
+
+    #total white pixels - (batch,)
+    trueSum = K.sum(true, axis=-1)
+    predSum = K.sum(pred, axis=-1)
+
+    #has mask or not per image - (batch,)
+    true1 = castF(K.greater(trueSum, 1))    
+    pred1 = castF(K.greater(predSum, 1))
+
+    #to get images that have mask in both true and pred
+    truePositiveMask = castB(true1 * pred1)
+
+    #separating only the possible true positives to check iou
+    testTrue = tf.boolean_mask(true, truePositiveMask)
+    testPred = tf.boolean_mask(pred, truePositiveMask)
+
+    #getting iou and threshold comparisons
+    iou = iou_loss_core(testTrue,testPred) 
+    truePositives = [castF(K.greater(iou, tres)) for tres in tresholds]
+
+    #mean of thressholds for true positives and total sum
+    truePositives = K.mean(K.stack(truePositives, axis=-1), axis=-1)
+    truePositives = K.sum(truePositives)
+
+    #to get images that don't have mask in both true and pred
+    trueNegatives = (1-true1) * (1 - pred1) # = 1 -true1 - pred1 + true1*pred1
+    trueNegatives = K.sum(trueNegatives) 
+
+    return (truePositives + trueNegatives) / castF(K.shape(true)[0])
