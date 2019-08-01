@@ -45,6 +45,11 @@ class Unet2D:
         return tf.losses.softmax_cross_entropy(y_true, y_pred, weights=weights, reduction=tf.losses.Reduction.MEAN)
 
     def _createModel(self, training):
+        
+        #config = tf.ConfigProto()
+        #config.gpu_options.per_process_gpu_memory_fraction = 1
+        #config.gpu_options.visible_device_list = "0"
+        #K.set_session(tf.Session(config=config))
 
         data = keras.layers.Input(shape=(None, None, self.n_channels), name="data")
 
@@ -135,7 +140,7 @@ class Unet2D:
     def train(self, sample_generator, validation_generator=None,
               n_epochs=100, snapshot_interval=1,
               snapshot_dir= 'checkpoints', snapshot_prefix=None,
-              log_dir = 'logs', cyclic_lr= None):
+              log_dir = 'logs', cyclic_lr= None, step_muliplier=1):
 
         callbacks = [TensorBoard(
             log_dir= log_dir + "/{}-{}".format(self.name, time()))]
@@ -153,7 +158,7 @@ class Unet2D:
                                        mode=cyclic_lr))
                 
         self.trainModel.fit_generator(sample_generator,
-                                      steps_per_epoch=len(sample_generator)*9,
+                                      steps_per_epoch=len(sample_generator)*step_muliplier,
                                       epochs=n_epochs,
                                       validation_data=validation_generator,
                                       verbose=1,
