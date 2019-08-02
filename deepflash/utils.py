@@ -10,14 +10,19 @@ from scipy import ndimage
 from scipy.spatial.distance import jaccard
 from skimage.feature import peak_local_max
 from skimage.segmentation import clear_border
-from skimage.measure import label, regionprops
+from skimage.measure import label
+from skimage.segmentation import relabel_sequential
 from skimage.morphology import watershed
+from scipy.optimize import linear_sum_assignment
+import tensorflow as tf
+import keras.backend as K
+import gc
 
 ############################################################
 #  Analyze regions and return labels
 ############################################################
 
-def label_mask(mask, threshold=0.5, min_pixel=15, do_watershed=True, exclude_border=True):
+def label_mask(mask, threshold=0.5, min_pixel=15, do_watershed=True, exclude_border=False):
     if mask.ndim == 3:
         mask = np.squeeze(mask, axis=2)
 
@@ -26,7 +31,7 @@ def label_mask(mask, threshold=0.5, min_pixel=15, do_watershed=True, exclude_bor
     bw = (mask > threshold).astype(int)
 
     # label image regions
-    label_image = label(bw)
+    label_image = label(bw, connectivity=2) # Falk p.13, 8-“connectivity”.
 
     # Watershed: Separates objects in image by generate the markers
     # as local maxima of the distance to the background
@@ -43,10 +48,13 @@ def label_mask(mask, threshold=0.5, min_pixel=15, do_watershed=True, exclude_bor
     # remove artifacts connected to image border
     if exclude_border:
         label_image = clear_border(label_image)
-
-    # remove areas < min pixel
-    _ = [np.place(label_image, label_image == i, 0) for i in range(1, label_image.max()) if
-         np.sum(label_image == i) < min_pixel]
+    
+    # remove areas < min pixel   
+    unique, counts = np.unique(label_image, return_counts=True)
+    label_image[np.isin(label_image, unique[counts<min_pixel])] = 0
+    
+    # re-label image
+    label_image, _ , _ = relabel_sequential(label_image, offset=1)
 
     return (label_image)
 
@@ -66,18 +74,44 @@ def jaccard_pixelwise(mask_a, mask_b, threshold=0.5):
 #  Compare masks using ROI-wise Jaccard Similarity
 ############################################################
 
-def jaccard_roiwise(mask_a, mask_b, threshold=0.5, min_roi_pixel=15, roi_threshold=0.5):
-    labels_a = label_mask(mask_a, threshold=threshold, min_pixel=min_roi_pixel)
-    labels_b = label_mask(mask_b, threshold=threshold, min_pixel=min_roi_pixel)
+def get_candidates(labels_a, labels_b):
+    
     label_stack = np.dstack((labels_a, labels_b))
-
-    comb_cadidates = np.unique(label_stack.reshape(-1, label_stack.shape[2]), axis=0)
+    cadidates = np.unique(label_stack.reshape(-1, label_stack.shape[2]), axis=0)
     # Remove Zero Entries
-    comb_cadidates = comb_cadidates[np.prod(comb_cadidates, axis=1) > 0]
+    cadidates = cadidates[np.prod(cadidates, axis=1) > 0]
+    return(cadidates)
+    
 
-    jac = [1 - jaccard((labels_a == x[0]).astype(np.uint8).flatten(), (labels_b == x[1]).astype(np.uint8).flatten()) for
-           x in comb_cadidates]
-    matches = np.sum(np.array(jac) >= roi_threshold)
-    union = (np.unique((labels_a)).size-1) + (np.unique((labels_b)).size-1) - matches
+############################################################
+#  Compare masks using ROI-wise Jaccard Similarity
+############################################################
 
-    return(matches/union)
+def iou_mapping(labels_a, labels_b, min_roi_size=30): 
+
+    candidates = get_candidates(labels_a, labels_b)
+    
+    # create a similarity matrix
+    dim_a = np.max(candidates[:,0])+1
+    dim_b = np.max(candidates[:,1])+1
+    similarity_matrix = np.zeros((dim_a, dim_b))
+    
+    for x,y in candidates:
+        roi_a = (labels_a == x).astype(np.uint8).flatten()
+        roi_b = (labels_b == y).astype(np.uint8).flatten()
+        similarity_matrix[x,y] = 1-jaccard(roi_a, roi_b)
+    
+    row_ind, col_ind = linear_sum_assignment(-similarity_matrix)
+    
+    return(similarity_matrix[row_ind,col_ind], 
+           np.max(labels_a), 
+           np.max(labels_b)
+           )
+
+############################################################
+#  Reset Keras Session
+############################################################
+def reset_keras(classifier=None):
+    sess = K.get_session()
+    K.clear_session()
+    sess.close()

@@ -169,13 +169,13 @@ class Unet2D:
         smscores = []
         segmentations = []
 
-        for tileIdx in range(tile_generator.__len__()):
+        for tileIdx in tqdm(range(tile_generator.__len__())):
             tile = tile_generator.__getitem__(tileIdx)
             outIdx = tile[0]["image_index"]
             outShape = tile[0]["image_shape"]
             outSlice = tile[0]["out_slice"]
             inSlice = tile[0]["in_slice"]
-            softmax_score = self.testModel.predict(tile[0]["data"], verbose=1)
+            softmax_score = self.testModel.predict(tile[0]["data"], verbose=0)
             if len(smscores) < outIdx + 1:
                 smscores.append(np.empty((*outShape, self.n_classes)))
                 segmentations.append(np.empty(outShape))
