@@ -16,7 +16,7 @@ import pdb
 class Unet2D:
     def __init__(self, snapshot=None, n_channels=1, n_classes=2, n_levels=4,
                  n_features=64, batch_norm=False, relu_alpha=0.1,
-                 upsample=False, n_softmax=1, k_init="he_normal", name="U-Net"):
+                 upsample=False, head_names=['coder_1'], k_init="he_normal", name="U-Net"):
 
         self.concat_blobs = []
 
@@ -28,7 +28,7 @@ class Unet2D:
         self.relu_alpha = relu_alpha
         self.k_init = k_init
         self.upsample = upsample
-        self.n_softmax = n_softmax
+        self.head_names = head_names
         self.name = name
         self.metrics = [metrics.recall,
                         metrics.precision,
@@ -36,17 +36,35 @@ class Unet2D:
                         metrics.iou,
                         metrics.mcor]
 
-        self.trainModel, self.padding = self._createModel(n_softmax,True)
-        self.testModel, _ = self._createModel(n_softmax, False)
+        self.trainModel, self.padding = self._createModel(True)
+        self.testModel, _ = self._createModel(False)
 
         if snapshot is not None:
-            self.trainModel.load_weights(snapshot)
-            self.testModel.load_weights(snapshot)
+            # store weights before loading pre-trained weights
+            #preloaded_layers = self.trainModel.layers.copy()
+            #preloaded_weights = []
+            #for pre in preloaded_layers:
+            #    preloaded_weights.append(pre.get_weights())
+
+            # load pre-trained weights
+            self.trainModel.load_weights(snapshot, by_name=False)
+            self.testModel.load_weights(snapshot, by_name=False)
+
+            # compare previews weights vs loaded weights
+            # for layer, pre in zip(self.trainModel.layers, preloaded_weights):
+            #    weights = layer.get_weights()
+
+            #    if weights:
+            #        if np.array_equal(weights, pre):
+            #            print('not loaded', layer.name)
+            #        else:
+             #           print('loaded', layer.name)
+            
 
     def _weighted_categorical_crossentropy(self, y_true, y_pred, weights):
         return tf.losses.softmax_cross_entropy(y_true, y_pred, weights=weights, reduction=tf.losses.Reduction.MEAN)
 
-    def _createModel(self, n_softmax, training):
+    def _createModel(self, training):
         
         #config = tf.ConfigProto()
         #config.gpu_options.per_process_gpu_memory_fraction = 1
@@ -59,8 +77,8 @@ class Unet2D:
 
         if training:
             labels = keras.layers.Input(
-                shape=(None, None, self.n_classes, n_softmax), name="labels")
-            weights = keras.layers.Input(shape=(None, None, n_softmax), name="weights")
+                shape=(None, None, self.n_classes, len(self.head_names)), name="labels")
+            weights = keras.layers.Input(shape=(None, None, len(self.head_names)), name="weights")
 
         # Modules of the analysis path consist of two convolutions and max pooling
         for l in range(self.n_levels):
@@ -120,24 +138,24 @@ class Unet2D:
     
         softmax_score = []
         score = []
-        for i in range(n_softmax):
+        for i, h_name in enumerate(self.head_names):
             score.append(Conv2D(self.n_classes, 1, kernel_initializer=self.k_init, 
-                           name="conv_u{}d-score".format(i))(t))
-            softmax_score.append(keras.layers.Softmax(name="sofmax_{}".format(i))(score[i]))
+                           name="conv_u{}d-score_{}".format(i, h_name))(t))
+            softmax_score.append(keras.layers.Softmax(name="softmax_{}".format(h_name))(score[i]))
         #softmax_score = keras.layers.Softmax()(score)
         
         if training:
             model = keras.Model(
                 inputs=[data, labels, weights], outputs=softmax_score)
-            for i in range(n_softmax):
+            for i in range(len(self.head_names)):
                 model.add_loss(self._weighted_categorical_crossentropy(
                     labels[...,i], score[i], weights[...,i]))
             opt = keras.optimizers.Adam(lr=0.00001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
             model.compile(optimizer=opt, loss=None)
-            for i in range(n_softmax):
+            for i, h_name in enumerate(self.head_names):
                 for m in self.metrics:
                     model.metrics_tensors.append(m(labels[...,i], score[i]))
-                    model.metrics_names.append(m.__name__+ '_' + str(i))
+                    model.metrics_names.append(m.__name__+ '_' + h_name)
             
         else:
             model = keras.Model(inputs=data, outputs=softmax_score)
@@ -172,10 +190,10 @@ class Unet2D:
                                       verbose=1,
                                       callbacks=callbacks)
 
-    def predict(self, tile_generator, n_softmax=1, ):
+    def predict(self, tile_generator):
 
-        smscores = [[] for i in range(n_softmax)]
-        segmentations = [[] for i in range(n_softmax)]
+        smscores = [[] for i in range(len(self.head_names))]
+        segmentations = [[] for i in range(len(self.head_names))]
 
         for tileIdx in tqdm(range(tile_generator.__len__())):
             tile = tile_generator.__getitem__(tileIdx)

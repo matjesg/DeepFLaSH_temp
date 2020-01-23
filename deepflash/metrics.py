@@ -5,7 +5,7 @@ import tensorflow as tf
 from keras import backend as K
 
 
-def iou(y_true, y_pred):
+def iou(y_true, y_pred, class_id=1):
     """Intersection Over Union for semantic segmentation.
     Also known as the Jaccard Similarity.
     
@@ -20,13 +20,20 @@ def iou(y_true, y_pred):
         - [What is a good evaluation measure for semantic segmentation?](
            http://www.bmva.org/bmvc/2013/Papers/paper0032/paper0032.pdf)
     """
+    y_pred = y_pred[..., class_id]
+    y_true = y_true[..., class_id]
     y_pred_bin = K.round(K.clip(y_pred, 0, 1))
     intersection = K.sum(K.round(K.clip(y_true * y_pred_bin, 0, 1)))
     sum_ = K.sum(K.abs(y_true) + K.abs(y_pred_bin))
-    return intersection / (sum_ - intersection)
+    # iou = intersection / (sum_ - intersection)
+    # return tf.cond(tf.math.is_nan(iou), lambda: 0., lambda: iou)
+    return intersection / (sum_ - intersection + K.epsilon())
 
-def mcor(y_true, y_pred):
+def mcor(y_true, y_pred, class_id=1):
     # matthews_correlation
+    
+    y_pred = y_pred[..., class_id]
+    y_true = y_true[..., class_id]
     y_pred_pos = K.round(K.clip(y_pred, 0, 1))
     y_pred_neg = 1 - y_pred_pos
 
@@ -45,7 +52,7 @@ def mcor(y_true, y_pred):
     return numerator / (denominator + K.epsilon())
 
 
-def precision(y_true, y_pred):
+def precision(y_true, y_pred, class_id=1):
     """Precision metric.
 
     Only computes a batch-wise average of precision.
@@ -53,13 +60,15 @@ def precision(y_true, y_pred):
     Computes the precision, a metric for multi-label classification of
     how many selected items are relevant.
     """
+    y_pred = y_pred[..., class_id]
+    y_true = y_true[..., class_id]
     true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
     predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
     precision = true_positives / (predicted_positives + K.epsilon())
     return precision
 
 
-def recall(y_true, y_pred):
+def recall(y_true, y_pred, class_id=1):
     """Recall metric.
 
     Only computes a batch-wise average of recall.
@@ -67,13 +76,17 @@ def recall(y_true, y_pred):
     Computes the recall, a metric for multi-label classification of
     how many relevant items are selected.
     """
+    y_pred = y_pred[..., class_id]
+    y_true = y_true[..., class_id]
     true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
     possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
     recall = true_positives / (possible_positives + K.epsilon())
     return recall
 
 
-def f1(y_true, y_pred):
+def f1(y_true, y_pred, class_id=1):
+    y_pred = y_pred[..., class_id]
+    y_true = y_true[..., class_id]
     def precision(y_true, y_pred):
         """Precision metric.
 
@@ -102,7 +115,9 @@ def f1(y_true, y_pred):
         return recall
     precision = precision(y_true, y_pred)
     recall = recall(y_true, y_pred)
-    return 2 * ((precision * recall) / (precision + recall))
+    
+    return 2 * ((precision * recall) / (precision + recall + K.epsilon()))
+    #return tf.cond(tf.math.is_nan(f1), lambda: 0., lambda: f1)
 
 
 #### Kaggle Mean IoU

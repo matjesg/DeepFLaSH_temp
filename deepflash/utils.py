@@ -17,6 +17,7 @@ from scipy.optimize import linear_sum_assignment
 import tensorflow as tf
 import keras.backend as K
 import gc
+import pdb
 
 ############################################################
 #  Analyze regions and return labels
@@ -71,6 +72,18 @@ def jaccard_pixelwise(mask_a, mask_b, threshold=0.5):
     return (1 - jac_dist)
 
 ############################################################
+#  IOU (faster)
+############################################################
+
+def iou(a,b,threshold=0.5):
+    a = a > threshold
+    b = b > threshold
+    overlap = a*b # Logical AND
+    union = a+b # Logical OR
+    return np.count_nonzero(overlap)/np.count_nonzero(union)
+    # return overlap.sum()/float(union.sum())
+
+############################################################
 #  Compare masks using ROI-wise Jaccard Similarity
 ############################################################
 
@@ -91,22 +104,30 @@ def iou_mapping(labels_a, labels_b, min_roi_size=30):
 
     candidates = get_candidates(labels_a, labels_b)
     
-    # create a similarity matrix
-    dim_a = np.max(candidates[:,0])+1
-    dim_b = np.max(candidates[:,1])+1
-    similarity_matrix = np.zeros((dim_a, dim_b))
-    
-    for x,y in candidates:
-        roi_a = (labels_a == x).astype(np.uint8).flatten()
-        roi_b = (labels_b == y).astype(np.uint8).flatten()
-        similarity_matrix[x,y] = 1-jaccard(roi_a, roi_b)
-    
-    row_ind, col_ind = linear_sum_assignment(-similarity_matrix)
-    
-    return(similarity_matrix[row_ind,col_ind], 
-           np.max(labels_a), 
-           np.max(labels_b)
-           )
+    if candidates.size > 0:
+        # create a similarity matrix
+        dim_a = np.max(candidates[:,0])+1
+        dim_b = np.max(candidates[:,1])+1
+        similarity_matrix = np.zeros((dim_a, dim_b))
+
+        for x,y in candidates:
+            roi_a = (labels_a == x).astype(np.uint8).flatten()
+            roi_b = (labels_b == y).astype(np.uint8).flatten()
+            similarity_matrix[x,y] = 1-jaccard(roi_a, roi_b)
+
+        row_ind, col_ind = linear_sum_assignment(-similarity_matrix)
+        
+        return(similarity_matrix[row_ind,col_ind], 
+               row_ind, col_ind,
+               np.max(labels_a), 
+               np.max(labels_b)
+               )
+    else:
+        return([], 
+               np.nan, np.nan,
+               np.max(labels_a), 
+               np.max(labels_b)
+               )
 
 ############################################################
 #  Reset Keras Session

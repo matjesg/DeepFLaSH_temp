@@ -5,6 +5,8 @@ from scipy.interpolate import Rbf
 from scipy.interpolate import interp1d
 import math
 from tqdm import tqdm
+import pdb
+import matplotlib.pyplot as plt
 
 """
 Deformation field class for data augmentation
@@ -110,7 +112,7 @@ class DataPreProcessor:
         self, data, instancelabels=None, classlabels=None, ignore=None, weights=None
     ):
 
-        dataScaled = data["rawdata"]
+        dataScaled = data["rawdata"].astype(float)
         elSize = data["element_size_um"]
         nDims = len(dataScaled.shape) - 1
         instlabels = instancelabels
@@ -150,11 +152,12 @@ class DataPreProcessor:
 
         # Normalize values to [0,1] range
         # print("  Normalizing intensity range...")
-        for c in range(dataScaled.shape[-1]):
+        # pdb.set_trace()
+        for c in range(dataScaled.shape[-1]):        
             minValue = np.min(dataScaled[..., c])
             maxValue = np.max(dataScaled[..., c])
             dataScaled[..., c] = (dataScaled[..., c] - minValue) / (maxValue - minValue)
-
+         
         # If no labels are given we are done and simply return the data array
         if instlabels is None and clabels is None:
             return dataScaled.astype(np.float32), None, None, None

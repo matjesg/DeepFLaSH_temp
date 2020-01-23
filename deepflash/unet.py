@@ -3,18 +3,22 @@ from keras.layers import Input, Conv2D, Conv2DTranspose, LeakyReLU, MaxPooling2D
 import keras.optimizers
 import tensorflow as tf
 from keras import backend as K
-from keras.callbacks import TensorBoard, ModelCheckpoint
+from keras.callbacks import TensorBoard, ModelCheckpoint, LearningRateScheduler
+from keras import regularizers
 import numpy as np
 import os
 from tqdm import tqdm
 from time import time
 from . import metrics
 from .callbacks import CyclicLR
+from .callbacks2 import CyclicLR2
+import pdb
 
 
 class Unet2D:
     def __init__(self, snapshot=None, n_channels=1, n_classes=2, n_levels=4,
-                 n_features=64, batch_norm=False, relu_alpha=0.1,
+                 n_features=64, batch_norm=False, relu_alpha=0.1,decay=0.0,
+                 bn_skip = 0,
                  upsample=False, k_init="he_normal", name="U-Net"):
 
         self.concat_blobs = []
@@ -28,11 +32,15 @@ class Unet2D:
         self.k_init = k_init
         self.upsample = upsample
         self.name = name
+        self.decay = decay
+        self.bn_skip = bn_skip
         self.metrics = [metrics.recall,
                         metrics.precision,
                         metrics.f1,
                         metrics.iou,
-                        metrics.mcor]
+                        metrics.mcor,
+                        #tf.keras.metrics.MeanIoU(num_classes=2, name="my_MeanIoU")
+        ]
 
         self.trainModel, self.padding = self._createModel(True)
         self.testModel, _ = self._createModel(False)
@@ -64,16 +72,14 @@ class Unet2D:
         for l in range(self.n_levels):
             t = Conv2D(2**l * self.n_features, 3, padding="valid", kernel_initializer=self.k_init,
                        name="conv_d{}a-b".format(l))(data if l == 0 else t)
+            if (self.batch_norm) & (l>self.bn_skip):
+                t = BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001)(t)
             t = LeakyReLU(alpha=self.relu_alpha)(t)
-            if self.batch_norm:
-                t = BatchNormalization(
-                    axis=-1, momentum=0.99, epsilon=0.001)(t)
             t = Conv2D(2**l * self.n_features, 3, padding="valid",
                        kernel_initializer=self.k_init, name="conv_d{}b-c".format(l))(t)
+            if (self.batch_norm) & (l>self.bn_skip):                    
+                t = BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001)(t)
             t = LeakyReLU(alpha=self.relu_alpha)(t)
-            if self.batch_norm:
-                t = BatchNormalization(
-                    axis=-1, momentum=0.99, epsilon=0.001)(t)
             # if l >= 2:
             #    t = Dropout(rate=0.5)(t)
             concat_blobs.append(t)
@@ -82,9 +88,13 @@ class Unet2D:
         # Deepest layer has two convolutions only
         t = Conv2D(2**self.n_levels * self.n_features, 3, padding="valid",
                    kernel_initializer=self.k_init, name="conv_d{}a-b".format(self.n_levels))(t)
+        if self.batch_norm:
+            t = BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001)(t)
         t = LeakyReLU(alpha=self.relu_alpha)(t)
         t = Conv2D(2**self.n_levels * self.n_features, 3, padding="valid",
                    kernel_initializer=self.k_init, name="conv_d{}b-c".format(self.n_levels))(t)
+        if self.batch_norm:
+            t = BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001)(t)
         t = LeakyReLU(alpha=self.relu_alpha)(t)
         pad = 8
 
@@ -98,19 +108,21 @@ class Unet2D:
             else:
                 t = Conv2DTranspose(2**np.max((l, 1)) * self.n_features, (2, 2), strides=2,
                                     padding='valid', kernel_initializer=self.k_init, name=name)(t)
+                if (self.batch_norm) & (l>self.bn_skip):
+                    t = BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001)(t)
                 t = LeakyReLU(alpha=self.relu_alpha)(t)
             t = Concatenate()(
                 [Cropping2D(cropping=int(pad / 2))(concat_blobs[l]), t])
 
-            # if self.batch_norm:
-            #    t = BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001)(t)
             t = Conv2D(2**np.max((l, 1)) * self.n_features, 3, padding="valid",
                        kernel_initializer=self.k_init, name="conv_u{}b-c".format(l))(t)
+            if (self.batch_norm) & (l>self.bn_skip):
+                t = BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001)(t)
             t = LeakyReLU(alpha=self.relu_alpha)(t)
-            # if self.batch_norm:
-            #    t = BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001)(t)
             t = Conv2D(2**np.max((l, 1)) * self.n_features, 3, padding="valid",
                        kernel_initializer=self.k_init, name="conv_u{}c-d".format(l))(t)
+            if (self.batch_norm) & (l>self.bn_skip):
+                t = BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001)(t)
             t = LeakyReLU(alpha=self.relu_alpha)(t)
             pad = 2 * (pad + 8)
 
@@ -125,11 +137,12 @@ class Unet2D:
                 inputs=[data, labels, weights], outputs=softmax_score)
             model.add_loss(self._weighted_categorical_crossentropy(
                 labels, score, weights))
-            opt = keras.optimizers.Adam(lr=0.00001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
-            model.compile(optimizer=opt, loss=None)
+            opt = keras.optimizers.Adam(lr=0.00001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=self.decay, amsgrad=False)
+            model.compile(optimizer=opt, loss=None)#, metrics=[tf.keras.metrics.Recall()])
             for m in self.metrics:
-                model.metrics_tensors.append(m(labels, score))
+                model.metrics_tensors.append(m(labels, softmax_score))
                 model.metrics_names.append(m.__name__)
+                #model.metrics_names.append(m.name)
             
         else:
             model = keras.Model(inputs=data, outputs=softmax_score)
@@ -138,9 +151,9 @@ class Unet2D:
 
 
     def train(self, sample_generator, validation_generator=None,
-              n_epochs=100, snapshot_interval=1,
+              n_epochs=100, snapshot_interval=1, lr=None, initial_epoch=0,
               snapshot_dir= 'checkpoints', snapshot_prefix=None,
-              log_dir = 'logs', cyclic_lr= None, step_muliplier=1):
+              log_dir = 'logs', cyclic_lr= None, scheduler=None, step_muliplier=1):
 
         callbacks = [TensorBoard(
             log_dir= log_dir + "/{}-{}".format(self.name, time()))]
@@ -152,18 +165,116 @@ class Unet2D:
             callbacks.append(ModelCheckpoint(
                 c_path + ".{epoch:04d}.h5", mode='auto', period=snapshot_interval))
         if cyclic_lr is not None:
-             callbacks.append(CyclicLR(base_lr=0.00001, 
-                                       max_lr=0.0001, 
-                                       step_size=750., # Authors suggest setting step_size = (2-8) x (training iterations in epoch=63)
-                                       mode=cyclic_lr))
-                
+            max_momentum = 0.95
+            min_momentum = 0.85
+            epochs = n_epochs-initial_epoch
+            #pdb.set_trace()
+            clr = CyclicLR(base_lr=lr/10, max_lr=lr,
+                           # step_size=math.ceil((steps_per_epoch*epochs)/2), 
+                           step_size=np.ceil((len(sample_generator)*epochs)/2), 
+                           mode=cyclic_lr
+                           #reduce_on_plateau=0,
+                           #max_momentum=max_momentum,
+                           #min_momentum=min_momentum,
+                           #verbose=1
+                          )
+            callbacks.append(clr)
+            #callbacks.append(CyclicLR(base_lr=0.00001, 
+            #                           max_lr=0.0001, 
+            #                           step_size=750., # Authors suggest setting step_size = (2-8) x (training iterations in epoch=63)
+            #                           mode=cyclic_lr))
+        if scheduler is not None:
+            callbacks.append(LearningRateScheduler(scheduler, verbose=1))
+        
         self.trainModel.fit_generator(sample_generator,
                                       steps_per_epoch=len(sample_generator)*step_muliplier,
                                       epochs=n_epochs,
+                                      initial_epoch = initial_epoch,
                                       validation_data=validation_generator,
+                                      nb_val_samples = len(validation_generator) if validation_generator is not None else None,
                                       verbose=1,
                                       callbacks=callbacks)
+        
+    def fit_one_cycle(self, train_generator, final_epoch, max_lr, 
+                      initial_epoch=0,
+                      validation_generator=None, 
+                      cycle_momentum = True,
+                      verbose = True, 
+                      snapshot_interval=1,
+                      snapshot_dir= 'checkpoints', 
+                      snapshot_prefix=None,
+                      log_dir = 'logs', 
+                      step_muliplier=1):
+        """
+        Train model using a version of Leslie Smith's 1cycle policy.
+        This method can be used with any optimizer. Thus,
+        cyclical momentum is not currently implemented.
+        Args:
+            max_lr (float): (maximum) learning rate.  
+                       It is recommended that you estimate lr yourself by 
+                       running lr_finder (and lr_plot) and visually inspect plot
+                       for dramatic loss drop.
+            epochs (int): Number of epochs.  Number of epochs
+            checkpoint_folder (string): Folder path in which to save the model weights 
+                                        for each epoch.
+                                        File name will be of the form: 
+                                        weights-{epoch:02d}-{val_loss:.2f}.hdf5
+            cycle_momentum (bool):    If True and optimizer is Adam, Nadam, or Adamax, momentum of 
+                                      optimzer will be cycled between 0.95 and 0.85 as described in 
+                                      https://arxiv.org/abs/1803.09820.
+                                      Only takes effect if Adam, Nadam, or Adamax optimizer is used.
+            class_weight (dict):       Optional dictionary mapping class indices (integers) to a weight (float) 
+            callbacks (list): list of Callback instances to employ during training
+            verbose (bool):  verbose mode
+        """
+        
+        callbacks = [TensorBoard(
+            log_dir= log_dir + "/{}-{}".format(self.name, time()))]
+        if snapshot_prefix is not None:
+            if not os.path.isdir(snapshot_dir):
+                os.makedirs(snapshot_dir)
+            c_path = os.path.join(
+                snapshot_dir, (snapshot_prefix if snapshot_prefix is not None else self.name))
+            callbacks.append(ModelCheckpoint(
+                c_path + ".{epoch:04d}.h5", mode='auto', period=snapshot_interval))
+        
+        if cycle_momentum:
+            max_momentum = 0.95
+            min_momentum = 0.85
+        else:
+            max_momentum = None
+            min_momentum = None
+            
+        num_samples = len(train_generator)*train_generator.batch_size #U.nsamples_from_data(self.train_data)
+        steps_per_epoch = np.ceil(num_samples/train_generator.batch_size)*step_muliplier
+        epochs = final_epoch-initial_epoch   
+        clr_fn = lambda x: 0.5*(1+np.sin(x*np.pi/2.))
+        clr = CyclicLR2(base_lr=max_lr/10, max_lr=max_lr,
+                       step_size=np.ceil((steps_per_epoch*epochs)/2), # Authors suggest setting step_size = (2-8) x (training iterations in epoch=63)
+                       scale_fn=clr_fn,
+                       reduce_on_plateau=0,
+                       max_momentum=max_momentum,
+                       min_momentum=min_momentum,
+                       verbose=verbose)
+        callbacks.append(clr)
+        
+        hist = self.trainModel.fit_generator(train_generator,
+                                      steps_per_epoch=steps_per_epoch,
+                                      epochs=final_epoch,
+                                      initial_epoch = initial_epoch,
+                                      validation_data=validation_generator,
+                                      nb_val_samples = len(validation_generator) if validation_generator is not None else None,
+                                      verbose=verbose,
+                                      callbacks=callbacks)
+        
+        hist.history['lr'] = clr.history['lr']
+        hist.history['iterations'] = clr.history['iterations']
+        if cycle_momentum:
+            hist.history['momentum'] = clr.history['momentum']
+        self.history = hist
+        return hist
 
+        
     def predict(self, tile_generator):
 
         smscores = []
@@ -184,3 +295,24 @@ class Unet2D:
                 softmax_score[0], axis=-1)[inSlice]
 
         return smscores, segmentations
+    
+    # from https://github.com/amaiya/ktrain/blob/24ec38b355f0e4decc5077194fcccfc2f1232cb2/ktrain/text/learner.py
+    def set_weight_decay(self, wd=0.005):
+        """
+        Sets global weight decay layer-by-layer using L2 regularization.
+        Args:
+          wd(float): weight decay (see note above)
+        Returns:
+          None
+              
+        """
+
+        for layer in self.trainModel.layers:
+            if hasattr(layer, 'kernel_regularizer') and hasattr(layer, 'kernel'):
+                layer.kernel_regularizer= regularizers.l2(wd)
+                layer.add_loss(regularizers.l2(wd)(layer.kernel))
+
+            if hasattr(layer, 'bias_regularizer') and hasattr(layer, 'bias'):
+                layer.bias_regularizer= regularizers.l2(wd)
+                layer.add_loss(regularizers.l2(wd)(layer.bias))
+        return
